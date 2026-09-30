@@ -1,0 +1,13 @@
+# 插件演示叠加配置 (由 spring-boot:run 的 --spring.config.additional-location 引入,
+# 优先级高于宿主自带的 application.yml)。
+#
+# 演示"整体替换": 关掉内置工具, 只留插件的 now;
+# 想演示"增量合并"时把 builtins-enabled 改回 true 即可, echo/read_file 会与 now 共存。
+dsh:
+  plugin:
+    stub:
+      enabled: true
+      # stub 适配器第一步要调用的工具名
+      tool-name: now
+  tools:
+    builtins-enabled: false

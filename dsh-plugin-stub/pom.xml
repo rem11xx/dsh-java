@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.dsh</groupId>
+        <artifactId>dsh-java</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>dsh-plugin-stub</artifactId>
+    <name>dsh-plugin-stub</name>
+    <description>演示插件: 脚本化 LLM 适配器 + now 工具, 替换宿主的 DeepSeek 适配器与内置工具</description>
+
+    <dependencies>
+        <!-- 依赖宿主拿到 seam 接口; 宿主对插件一无所知 -->
+        <dependency>
+            <groupId>com.dsh</groupId>
+            <artifactId>dsh-app</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                插件模块没有自己的 mainClass, repackage 跳过;
+                spring-boot:run 直接拉起宿主应用, 插件随 classpath 参与装配,
+                这就是演示命令: mvn -pl dsh-plugin-stub spring-boot:run
+            -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.dsh.DshApplication</mainClass>
+                    <!-- 宿主自带 application.yml 之上再叠加插件的演示配置 -->
+                    <arguments>
+                        <argument>--spring.config.additional-location=classpath:/application-plugin.yml</argument>
+                    </arguments>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>repackage</id>
+                        <phase>none</phase>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

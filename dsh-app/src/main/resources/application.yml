@@ -1,0 +1,35 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: dsh-java
+
+dsh:
+  session:
+    # 会话根目录, 每个会话一个子目录 <id>/session.jsonl, data/ 已在 .gitignore
+    dir: ./data/sessions
+  llm:
+    # 火山引擎 coding plan, OpenAI 兼容端点
+    base-url: https://ark.cn-beijing.volces.com/api/coding/v3
+    # 不要把 Key 写在这里, 用环境变量注入
+    api-key: ${ARK_API_KEY:}
+    # 按开通的 coding plan 填写模型名
+    model: deepseek-v4-flash
+    timeout-seconds: 120
+  agent:
+    # 单轮内最大 step 数, 防止模型无限循环调工具
+    max-steps: 8
+    # 系统提示词, 首次调用 LLM 前落一条 system/message 事件
+    system-prompt: "你是 dsh-java 的演示助手。需要时可以调用提供的工具, 回答保持简洁。"
+  tools:
+    # 内置示例工具开关, D7 插件模块演示整体替换时置 false
+    builtins-enabled: true
+    # read_file 沙箱根目录, 越界路径在 pre 阶段拒绝
+    sandbox-dir: .
+    # 工具结果进入模型上下文前的截断上限
+    max-result-chars: 8192
+
+logging:
+  level:
+    com.dsh: DEBUG

@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>dsh-java 演示</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    background: #0d1117; color: #c9d1d9;
+    display: flex; flex-direction: column; height: 100vh;
+  }
+  header {
+    padding: 10px 16px; border-bottom: 1px solid #21262d;
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+    background: #161b22; font-size: 13px;
+  }
+  header h1 { font-size: 15px; color: #58a6ff; }
+  header .meta { color: #8b949e; }
+  header .meta b { color: #c9d1d9; font-weight: normal; }
+  #session-select {
+    background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+    border-radius: 6px; padding: 3px 8px; font-family: inherit; font-size: 12px;
+    max-width: 260px;
+  }
+  #session-select:focus { outline: none; border-color: #58a6ff; }
+  #session-select:disabled { opacity: 0.5; cursor: not-allowed; }
+  #session-new {
+    background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+    border-radius: 6px; padding: 3px 10px; font-family: inherit; font-size: 12px; cursor: pointer;
+  }
+  #session-new:hover { background: #30363d; }
+  #session-new:disabled { opacity: 0.5; cursor: not-allowed; }
+  #conn { margin-left: auto; }
+  #conn.ok::before { content: "●"; color: #3fb950; margin-right: 4px; }
+  #conn.bad::before { content: "●"; color: #f85149; margin-right: 4px; }
+
+  #timeline {
+    flex: 1; overflow-y: auto; padding: 16px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .divider {
+    text-align: center; color: #8b949e; font-size: 12px; margin: 8px 0;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .divider::before, .divider::after { content: ""; flex: 1; border-top: 1px solid #21262d; }
+  .divider .reason-error { color: #f85149; }
+  .divider .reason-max { color: #d29922; }
+
+  .bubble { max-width: 78%; padding: 8px 12px; border-radius: 8px; white-space: pre-wrap; word-break: break-word; }
+  .bubble.user { align-self: flex-end; background: #1f3a5f; color: #dbe9ff; }
+  .bubble.assistant { align-self: flex-start; background: #1c2128; border: 1px solid #21262d; }
+
+  .toolcall { align-self: flex-start; font-size: 13px; color: #d2a8ff; }
+  .toolcall .arrow { color: #8b949e; }
+  .toolcall code { color: #79c0ff; }
+  .toolresult { align-self: flex-start; font-size: 13px; color: #8b949e; white-space: pre-wrap; word-break: break-word; max-width: 78%; }
+  .toolresult.error { color: #f85149; }
+  .step { align-self: center; font-size: 11px; color: #484f58; }
+
+  .raw {
+    align-self: flex-start; max-width: 100%; font-size: 11px; color: #484f58;
+    background: #161b22; border: 1px solid #21262d; border-radius: 4px;
+    padding: 6px 8px; overflow-x: auto; display: none; white-space: pre;
+  }
+  .show-raw .raw { display: block; }
+  .item { display: flex; flex-direction: column; gap: 4px; cursor: pointer; }
+
+  footer {
+    border-top: 1px solid #21262d; padding: 12px 16px;
+    display: flex; gap: 8px; background: #161b22;
+  }
+  #input {
+    flex: 1; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+    border-radius: 6px; padding: 8px 12px; font-family: inherit; font-size: 14px;
+  }
+  #input:focus { outline: none; border-color: #58a6ff; }
+  #send {
+    background: #238636; color: #fff; border: none; border-radius: 6px;
+    padding: 8px 20px; font-family: inherit; font-size: 14px; cursor: pointer;
+  }
+  #send:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+  #hint { font-size: 12px; color: #8b949e; padding: 0 16px 8px; background: #161b22; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>dsh-java</h1>
+  <select id="session-select" title="切换会话"></select>
+  <button id="session-new" title="新建空白会话">+ 新建</button>
+  <span class="meta">provider: <b id="provider">-</b></span>
+  <span class="meta">tools: <b id="tools">-</b></span>
+  <span class="meta">plugins: <b id="plugins">-</b></span>
+  <span class="meta">events: <b id="seq">0</b></span>
+  <span id="conn" class="bad">连接中...</span>
+</header>
+
+<div id="timeline"></div>
+
+<div id="hint">点击任意事件可展开原始 JSON; 输入消息回车发送 (试试: "用 read_file 读一下 pom.xml"); 顶部下拉切换会话, + 新建开空白会话</div>
+<footer>
+  <input id="input" type="text" placeholder="给 agent 发消息..." autocomplete="off">
+  <button id="send">发送</button>
+</footer>
+
+<script>
+"use strict";
+
+const timeline = document.getElementById("timeline");
+const input = document.getElementById("input");
+const send = document.getElementById("send");
+const conn = document.getElementById("conn");
+const sessionSelect = document.getElementById("session-select");
+const sessionNew = document.getElementById("session-new");
+
+let lastSeq = 0;
+let running = false;
+let es = null; // 当前 SSE 连接, 切换会话时关闭重开
+
+// ---------- 事件渲染 ----------
+
+function esc(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function textOf(blocks) {
+  return (blocks || []).filter(b => b.type === "text").map(b => b.text).join("");
+}
+
+/** 一条时间线记录, 点击展开原始 JSON */
+function addItem(nodes, event) {
+  const item = document.createElement("div");
+  item.className = "item";
+  for (const n of nodes) item.appendChild(n);
+  const raw = document.createElement("pre");
+  raw.className = "raw";
+  raw.textContent = JSON.stringify(event, null, 2);
+  item.appendChild(raw);
+  item.onclick = () => item.classList.toggle("show-raw");
+  timeline.appendChild(item);
+  timeline.scrollTop = timeline.scrollHeight;
+}
+
+function el(cls, html) {
+  const d = document.createElement("div");
+  d.className = cls;
+  d.innerHTML = html;
+  return d;
+}
+
+function render(event) {
+  if (event.seq <= lastSeq) return; // SSE 补发历史与实时流重叠时按 seq 去重
+  lastSeq = event.seq;
+  document.getElementById("seq").textContent = lastSeq;
+
+  const t = event.type;
+  if (t === "turn/start") {
+    addItem([el("divider", "turn " + event.data.turn)], event);
+  } else if (t === "turn/end") {
+    const reason = event.data.reason;
+    const cls = reason === "error" ? "reason-error" : (reason === "max_steps" ? "reason-max" : "");
+    addItem([el("divider", "turn " + event.data.turn + ' 结束 <span class="' + cls + '">(' + reason + ")</span>")], event);
+  } else if (t === "step/start") {
+    addItem([el("step", "step " + event.data.step)], event);
+  } else if (t === "step/end") {
+    // step 结束不渲染, 与 step/start 成对出现太噪; 原始 JSON 仍可从日志查看
+  } else if (t === "user/message") {
+    addItem([el("bubble user", esc(textOf(event.data.content)))], event);
+  } else if (t === "assistant/message") {
+    const content = event.data.message.content || [];
+    const text = textOf(content);
+    const nodes = [];
+    if (text) nodes.push(el("bubble assistant", esc(text)));
+    for (const b of content.filter(b => b.type === "tool_call")) {
+      nodes.push(el("toolcall", '<span class="arrow">-&gt;</span> 调用工具 <code>' + esc(b.name) + "</code> " + esc(b.arguments || "")));
+    }
+    if (nodes.length) addItem(nodes, event);
+  } else if (t === "tool/call") {
+    addItem([el("toolcall", '<span class="arrow">-&gt;</span> 执行 <code>' + esc(event.data.name) + "</code> " + esc(event.data.arguments || ""))], event);
+  } else if (t === "tool/result") {
+    const block = (event.data.message.content || []).find(b => b.type === "tool_result");
+    const text = block ? textOf(block.content) : "(空)";
+    const cls = block && block.isError ? "toolresult error" : "toolresult";
+    addItem([el(cls, "&lt;- " + esc(text))], event);
+  }
+}
+
+// ---------- 历史加载 + SSE 订阅 ----------
+
+async function connect() {
+  // 切换会话/刷新通用入口: 清空时间线, 重拉历史, 重开 SSE
+  if (es) es.close();
+  timeline.innerHTML = "";
+  lastSeq = 0;
+  document.getElementById("seq").textContent = "0";
+
+  // 先拉历史日志 (刷新后时间线可恢复), 再从最后一个 seq 订阅实时流
+  try {
+    const res = await fetch("/api/session/events");
+    const events = await res.json();
+    for (const e of events) render(e);
+  } catch (e) { /* 历史拉取失败不致命 */ }
+
+  es = new EventSource("/api/events/stream?sinceSeq=" + lastSeq);
+  for (const type of ["turn/start", "turn/end", "step/start", "step/end",
+      "user/message", "system/message", "assistant/message", "tool/call", "tool/result"]) {
+    es.addEventListener(type, (msg) => render(JSON.parse(msg.data)));
+  }
+  es.onopen = () => { conn.textContent = "SSE 已连接"; conn.className = "ok"; };
+  es.onerror = () => { conn.textContent = "SSE 断开, 重连中..."; conn.className = "bad"; };
+}
+
+// ---------- 发送消息 ----------
+
+async function submit() {
+  const text = input.value.trim();
+  if (!text || running) return;
+  running = true;
+  input.value = "";
+  input.disabled = true;
+  send.disabled = true;
+  send.textContent = "执行中...";
+  sessionSelect.disabled = true; // 轮次进行中禁止切换, 避免跨会话事件串台
+  sessionNew.disabled = true;
+  try {
+    const res = await fetch("/api/agent/turn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text })
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      addItem([el("toolresult error", "[请求失败] " + esc(body.error || res.status))], { type: "error", seq: ++lastSeq });
+    }
+  } catch (e) {
+    addItem([el("toolresult error", "[请求失败] " + esc(String(e)))], { type: "error", seq: ++lastSeq });
+  } finally {
+    running = false;
+    input.disabled = false;
+    send.disabled = false;
+    send.textContent = "发送";
+    sessionSelect.disabled = false;
+    sessionNew.disabled = false;
+    input.focus();
+  }
+}
+
+send.onclick = submit;
+input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+
+// ---------- 会话列表 / 切换 / 新建 ----------
+
+/** 拉会话列表填充下拉框, 并同步头部 provider/tools 与当前选中项 */
+async function refreshSessions() {
+  try {
+    const [list, info] = await Promise.all([
+      fetch("/api/session/list").then(r => r.json()),
+      fetch("/api/agent/info").then(r => r.json())
+    ]);
+    sessionSelect.innerHTML = "";
+    const ids = [];
+    for (const s of list) {
+      const opt = document.createElement("option");
+      opt.value = s.id;
+      opt.textContent = s.id.slice(0, 8) + " (" + s.events + " 事件)";
+      sessionSelect.appendChild(opt);
+      ids.push(s.id);
+    }
+    if (!ids.includes(info.sessionId)) {
+      const opt = document.createElement("option");
+      opt.value = info.sessionId;
+      opt.textContent = info.sessionId.slice(0, 8) + " (当前)";
+      sessionSelect.appendChild(opt);
+    }
+    sessionSelect.value = info.sessionId;
+    sessionSelect.title = info.sessionId;
+    document.getElementById("provider").textContent = info.provider;
+    document.getElementById("tools").textContent = info.tools.join(", ");
+  } catch (e) { /* 列表拉取失败不致命 */ }
+}
+
+sessionSelect.onchange = async () => {
+  try {
+    const res = await fetch("/api/session/switch/" + sessionSelect.value, { method: "POST" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    await connect(); // 清空时间线 + 重拉历史 + 重开 SSE
+  } catch (e) {
+    addItem([el("toolresult error", "[切换会话失败] " + esc(String(e)))], { type: "error", seq: ++lastSeq });
+  }
+};
+
+sessionNew.onclick = async () => {
+  try {
+    const res = await fetch("/api/session/new", { method: "POST" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    await refreshSessions();
+    await connect();
+  } catch (e) {
+    addItem([el("toolresult error", "[新建会话失败] " + esc(String(e)))], { type: "error", seq: ++lastSeq });
+  }
+};
+
+refreshSessions();
+
+// D7 插件面板: 无插件时显示 (无), 插件在 classpath 上即在此报到
+fetch("/api/plugins").then(r => r.json()).then(p => {
+  const names = (p.plugins || []).map(x => x.name).join(", ");
+  document.getElementById("plugins").textContent = names || "(无)";
+});
+
+connect();
+input.focus();
+</script>
+</body>
+</html>

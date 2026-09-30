@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.6</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.dsh</groupId>
+    <artifactId>dsh-java</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>dsh-java</name>
+    <description>DeepSeek Harness 的最小 Java 复刻版 (聚合器)</description>
+
+    <!--
+        D7 起为多模块结构:
+        dsh-app          宿主应用 (core/web/config, 不知道任何插件的存在)
+        dsh-plugin-stub  插件模块 (依赖宿主, 替换 LLM 适配器与工具集)
+        依赖方向宿主 <- 插件, 插件 jar 不在 classpath 上时宿主完全无感。
+    -->
+
+    <!--
+        源码兼容 language level 17 (本机 IDEA 版本语言级别最高支持 17):
+        运行时仍用 Zulu 21 JDK, 但源码不用 switch 模式匹配 / SequencedCollection 等 21 专属语法。
+    -->
+    <properties>
+        <java.version>17</java.version>
+        <maven.compiler.release>17</maven.compiler.release>
+    </properties>
+
+    <modules>
+        <module>dsh-app</module>
+        <module>dsh-plugin-stub</module>
+    </modules>
+</project>

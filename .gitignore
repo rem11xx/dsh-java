@@ -1,0 +1,21 @@
+# build
+target/
+*.class
+
+# ide
+.idea/
+*.iml
+.vscode/
+
+# os
+.DS_Store
+
+*.log
+data/
+.env
+/docs/
+CLAUDE.md
+AGENTS.md
+.claude/
+/output/
+/.codex/
